@@ -41,12 +41,13 @@ const DEMO_MESSAGES = [
 
 /* Views */
 
+const signinView = document.getElementById('signinView');
 const inboxView = document.getElementById('inboxView');
 const messageView = document.getElementById('messageView');
 const composeView = document.getElementById('composeView');
 
 function show(view) {
-  [inboxView, messageView, composeView].forEach((v) => {
+  [signinView, inboxView, messageView, composeView].forEach((v) => {
     v.classList.add('hidden');
   });
   view.classList.remove('hidden');
@@ -280,6 +281,27 @@ document.getElementById('backToInbox').onclick = () => {
   show(inboxView);
 };
 
+/* Signin */
+
+document.getElementById('signinForm').onsubmit = async (e) => {
+  e.preventDefault();
+
+  const email = document.getElementById('signinEmail').value;
+  const errorEl = document.getElementById('signinError');
+
+  errorEl.classList.add('hidden');
+  errorEl.textContent = '';
+
+  try {
+    await api.auth.signin(email);
+    await init();
+  } catch (error) {
+    console.error('Signin failed:', error);
+    errorEl.textContent = error.message || 'Sign in failed. Please try again.';
+    errorEl.classList.remove('hidden');
+  }
+};
+
 /* API */
 
 class API {
@@ -297,6 +319,31 @@ class API {
     loadTokens: () => {
       this.token = localStorage.getItem('MolnOSToken');
       this.refreshToken = localStorage.getItem('MolnOSRefreshToken');
+    },
+
+    signin: async (email) => {
+      const response = await fetch(`${this.baseUrl}/auth/login/cli`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || response.statusText);
+      }
+
+      const data = await response.json();
+
+      // Store tokens
+      this.token = data.accessToken;
+      this.refreshToken = data.refreshToken;
+      localStorage.setItem('MolnOSToken', data.accessToken);
+      localStorage.setItem('MolnOSRefreshToken', data.refreshToken);
+
+      return data;
     },
 
     logout: () => {
@@ -435,14 +482,25 @@ const api = new API();
 
 async function init() {
   if (!DEMO_MODE) {
+    // Check if user has valid token
+    if (!api.token) {
+      show(signinView);
+      return;
+    }
+
     try {
       await api.identity.whoami();
       console.log('User identity loaded:', api.userIdentity);
     } catch (error) {
       console.error('Failed to fetch user identity:', error);
-      return; // Don't load inbox if identity fetch failed
+      // Clear invalid tokens and show signin
+      api.auth.clearTokens();
+      show(signinView);
+      return;
     }
   }
+
+  show(inboxView);
   await loadInbox();
 }
 

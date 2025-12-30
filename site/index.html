@@ -11,13 +11,24 @@
   <body>
     <main class="app">
 
-      <header class="app-header">
-        <h1>Inbox</h1>
-        <button id="composeBtn" class="pill">New message</button>
-      </header>
+      <!-- Signin view -->
+      <section id="signinView" class="view">
+        <div class="signin-container">
+          <h1>Sign In</h1>
+          <form id="signinForm" class="signin-form">
+            <input type="email" id="signinEmail" placeholder="Email" required />
+            <button type="submit" class="pill">Sign In</button>
+            <div id="signinError" class="error-message hidden"></div>
+          </form>
+        </div>
+      </section>
 
       <!-- Inbox list -->
       <section id="inboxView" class="view">
+        <header class="app-header">
+          <h1>Inbox</h1>
+          <button id="composeBtn" class="pill">New message</button>
+        </header>
         <ul id="messageList" class="message-list"></ul>
       </section>
 
