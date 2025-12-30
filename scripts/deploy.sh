@@ -12,16 +12,17 @@ echo ""
 # Create storage bucket
 echo "Creating storage bucket: $BUCKET_NAME"
 molnos storage bucket create "$BUCKET_NAME" || echo "Bucket may already exist"
+molnos storage bucket update "$BUCKET_NAME" public
 echo ""
 
 # Create database table
-#echo "Creating database table: $TABLE_NAME"
-#molnos db table create "$TABLE_NAME" || echo "Table may already exist"
+echo "Creating database table: $TABLE_NAME"
+molnos db table create "$TABLE_NAME" || echo "Table may already exist"
 echo ""
 
 # Build JavaScript functions
 echo "Building JavaScript functions..."
-node build.mjs
+node scripts/build.mjs
 echo ""
 
 # Deploy functions

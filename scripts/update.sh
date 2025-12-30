@@ -39,7 +39,7 @@ echo ""
 
 # Build JavaScript functions
 echo "Building JavaScript functions..."
-node build.mjs
+node scripts/build.mjs
 echo ""
 
 # Update functions

@@ -30,7 +30,7 @@ npm install
 Run the setup script to create all required infrastructure (database table, storage bucket, functions, and site):
 
 ```bash
-./setup.sh
+./deploy.sh
 ```
 
 This will:
@@ -76,12 +76,12 @@ http://localhost:3000/sites/projects/abc12def/
 
 This project includes three management scripts using the MolnOS CLI:
 
-### Setup Script ([setup.sh](setup.sh))
+### Setup Script ([deploy.sh](deploy.sh))
 
 Creates all infrastructure from scratch:
 
 ```bash
-./setup.sh
+./deploy.sh
 ```
 
 ### Update Script ([update.sh](update.sh))
@@ -142,7 +142,7 @@ export SEND_MESSAGE_ID='<id>'
 │   ├── index.html
 │   ├── script.js
 │   └── styles.css
-├── setup.sh           # Infrastructure setup script
+├── deploy.sh           # Infrastructure setup script
 ├── update.sh          # Update functions and site
 ├── teardown.sh        # Remove infrastructure
 ├── build.mjs          # Build script for functions
