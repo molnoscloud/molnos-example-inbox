@@ -4,7 +4,8 @@
 const API_BASE_URL = 'http://localhost:3000';
 const BUCKET_ID = 'inbox-bucket';
 
-// After deploying functions, map their IDs to their names here
+// These should be automatically populated by the deployment script etc.
+const APP_ID = '';
 const FUNCTION_IDS = {
   listMessages: '',
   getMessage: '',
@@ -45,12 +46,20 @@ const signinView = document.getElementById('signinView');
 const inboxView = document.getElementById('inboxView');
 const messageView = document.getElementById('messageView');
 const composeView = document.getElementById('composeView');
+const signOutBtn = document.getElementById('signOutBtn');
 
 function show(view) {
   [signinView, inboxView, messageView, composeView].forEach((v) => {
     v.classList.add('hidden');
   });
   view.classList.remove('hidden');
+
+  // Show sign-out button only when not on signin view
+  if (view === signinView) {
+    signOutBtn.classList.add('hidden');
+  } else {
+    signOutBtn.classList.remove('hidden');
+  }
 }
 
 /* Inbox */
@@ -181,6 +190,12 @@ document.getElementById('cancelCompose').onclick = () => {
   show(inboxView);
 };
 
+signOutBtn.onclick = () => {
+  if (confirm('Are you sure you want to sign out?')) {
+    api.auth.logout();
+  }
+};
+
 // Handle image selection
 document.getElementById('imageInput').onchange = (e) => {
   const files = Array.from(e.target.files);
@@ -288,17 +303,36 @@ document.getElementById('signinForm').onsubmit = async (e) => {
 
   const email = document.getElementById('signinEmail').value;
   const errorEl = document.getElementById('signinError');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
 
   errorEl.classList.add('hidden');
   errorEl.textContent = '';
+  errorEl.style.color = '';
+
+  // Disable submit button
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending...';
 
   try {
-    await api.auth.signin(email);
-    await init();
+    const result = await api.auth.signin(email);
+
+    // Show success message
+    errorEl.textContent =
+      result.message || 'Check your email for a magic link to sign in!';
+    errorEl.style.color = 'green';
+    errorEl.classList.remove('hidden');
+
+    // Reset form
+    e.target.reset();
   } catch (error) {
     console.error('Signin failed:', error);
     errorEl.textContent = error.message || 'Sign in failed. Please try again.';
+    errorEl.style.color = 'red';
     errorEl.classList.remove('hidden');
+  } finally {
+    // Re-enable submit button
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Sign In';
   }
 };
 
@@ -322,12 +356,26 @@ class API {
     },
 
     signin: async (email) => {
-      const response = await fetch(`${this.baseUrl}/auth/login/cli`, {
+      // Construct redirect URL to our auth callback page
+      const currentOrigin = window.location.origin;
+      const currentPath = window.location.pathname;
+      // Extract site path (everything up to and including the project ID)
+      const sitePath = currentPath.substring(
+        0,
+        currentPath.lastIndexOf('/') + 1
+      );
+      const redirectUrl = `${currentOrigin}${sitePath}auth-callback.html`;
+
+      const response = await fetch(`${this.baseUrl}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({
+          email,
+          redirectUrl,
+          applicationId: APP_ID
+        })
       });
 
       if (!response.ok) {
@@ -337,17 +385,14 @@ class API {
 
       const data = await response.json();
 
-      // Store tokens
-      this.token = data.accessToken;
-      this.refreshToken = data.refreshToken;
-      localStorage.setItem('MolnOSToken', data.accessToken);
-      localStorage.setItem('MolnOSRefreshToken', data.refreshToken);
-
+      // Show success message - user needs to check their email
       return data;
     },
 
     logout: () => {
       this.clearTokens();
+      // Redirect to signin
+      window.location.href = 'index.html';
     },
 
     clearTokens: () => {

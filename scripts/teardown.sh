@@ -6,13 +6,24 @@ set -e
 BUCKET_NAME="inbox-bucket"
 TABLE_NAME="inbox-messages"
 
+# Load credentials if available
+if [ -f ".app-credentials" ]; then
+  source .app-credentials
+fi
+
 # Function and Site IDs - SET THESE VIA ENVIRONMENT VARIABLES
 LIST_MESSAGES_ID="${LIST_MESSAGES_ID:-}"
 GET_MESSAGE_ID="${GET_MESSAGE_ID:-}"
 SEND_MESSAGE_ID="${SEND_MESSAGE_ID:-}"
 SITE_ID="${SITE_ID:-}"
+APP_NAME="inbox-app"
 
 echo "Tearing down MolnOS Inbox infrastructure..."
+echo ""
+
+# Delete Application Registration by name
+echo "Deleting Application Registration: $APP_NAME"
+molnos apps delete "$APP_NAME" || echo "Application may not exist"
 echo ""
 
 # Delete site
@@ -59,5 +70,11 @@ echo ""
 echo "Deleting storage bucket: $BUCKET_NAME"
 molnos storage bucket delete "$BUCKET_NAME" || echo "Bucket may not exist"
 echo ""
+
+# Remove credentials file
+if [ -f ".app-credentials" ]; then
+  echo "Removing .app-credentials file..."
+  rm .app-credentials
+fi
 
 echo "Teardown complete!"

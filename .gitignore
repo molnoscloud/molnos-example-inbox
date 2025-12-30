@@ -24,4 +24,6 @@ Thumbs.db
 .env.local
 .env.*.local
 
-set-function-vars.sh
+molnos-cli.sh
+schema.yml
+.app-credentials

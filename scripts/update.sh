@@ -2,6 +2,11 @@
 
 set -e
 
+# Load credentials if available
+if [ -f ".app-credentials" ]; then
+  source .app-credentials
+fi
+
 # Function and Site IDs - SET THESE VIA ENVIRONMENT VARIABLES
 LIST_MESSAGES_ID="${LIST_MESSAGES_ID:-}"
 GET_MESSAGE_ID="${GET_MESSAGE_ID:-}"
@@ -75,6 +80,7 @@ const fs = require('fs');
 
 const files = [
   { path: 'index.html', content: fs.readFileSync('site/index.html', 'base64') },
+  { path: 'auth-callback.html', content: fs.readFileSync('site/auth-callback.html', 'base64') },
   { path: 'styles.css', content: fs.readFileSync('site/styles.css', 'base64') },
   { path: 'script.js', content: fs.readFileSync('site/script.js', 'base64') }
 ];

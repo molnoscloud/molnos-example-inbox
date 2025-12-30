@@ -27,10 +27,15 @@
       <section id="inboxView" class="view">
         <header class="app-header">
           <h1>Inbox</h1>
-          <button id="composeBtn" class="pill">New message</button>
+          <div class="header-actions">
+            <button id="composeBtn" class="pill">New message</button>
+          </div>
         </header>
         <ul id="messageList" class="message-list"></ul>
       </section>
+
+      <!-- Sign out button (fixed) -->
+      <button id="signOutBtn" class="pill sign-out-btn hidden">Sign out</button>
 
       <!-- Message view -->
       <section id="messageView" class="view hidden">

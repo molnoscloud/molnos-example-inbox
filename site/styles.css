@@ -32,6 +32,12 @@ body {
   margin-bottom: 2rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 h1 {
   font-size: 1.8rem;
   font-weight: 500;
@@ -253,4 +259,12 @@ button.link:hover {
   border-radius: 4px;
   color: #c33;
   font-size: 0.9rem;
+}
+
+.sign-out-btn {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 100;
 }

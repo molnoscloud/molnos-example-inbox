@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Authentication - MolnOS Inbox</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .callback-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 2rem;
+        text-align: center;
+      }
+      .spinner {
+        border: 3px solid rgba(0, 0, 0, 0.1);
+        border-top-color: #000;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .error-box {
+        background: #fee;
+        border: 1px solid #fcc;
+        padding: 1rem;
+        border-radius: 4px;
+        max-width: 500px;
+        margin-top: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="callback-container">
+      <div id="loading">
+        <div class="spinner"></div>
+        <p>Completing authentication...</p>
+      </div>
+      <div id="error" class="error-box" style="display: none;">
+        <h2>Authentication Failed</h2>
+        <p id="errorMessage"></p>
+        <button onclick="window.location.href='index.html'" class="pill">Return to Sign In</button>
+      </div>
+    </div>
+
+    <script>
+      // Extract magic link token from URL query parameters and verify it
+      (async function() {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token');
+        const email = params.get('email');
+        const error = params.get('error');
+
+        const loadingEl = document.getElementById('loading');
+        const errorEl = document.getElementById('error');
+        const errorMessageEl = document.getElementById('errorMessage');
+
+        if (error) {
+          // Show error message
+          loadingEl.style.display = 'none';
+          errorEl.style.display = 'block';
+          errorMessageEl.textContent = decodeURIComponent(error);
+          return;
+        }
+
+        if (!token || !email) {
+          // Missing token or email
+          loadingEl.style.display = 'none';
+          errorEl.style.display = 'block';
+          errorMessageEl.textContent = 'Missing authentication credentials. Please try signing in again.';
+          return;
+        }
+
+        try {
+          // Verify the magic link token by calling /auth/verify
+          const apiBaseUrl = window.location.origin.replace(/\/sites\/projects\/[^\/]+$/, '');
+          const verifyUrl = `${apiBaseUrl}/auth/verify?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+
+          const response = await fetch(verifyUrl);
+
+          if (!response.ok) {
+            throw new Error('Failed to verify authentication token');
+          }
+
+          const data = await response.json();
+
+          // Store the JWT tokens from the verify response
+          if (data.accessToken) {
+            localStorage.setItem('MolnOSToken', data.accessToken);
+          }
+          if (data.refreshToken) {
+            localStorage.setItem('MolnOSRefreshToken', data.refreshToken);
+          }
+
+          // Redirect to main app
+          window.location.href = 'index.html';
+        } catch (err) {
+          console.error('Verification error:', err);
+          loadingEl.style.display = 'none';
+          errorEl.style.display = 'block';
+          errorMessageEl.textContent = 'Failed to verify authentication. Please try signing in again.';
+        }
+      })();
+    </script>
+  </body>
+</html>
