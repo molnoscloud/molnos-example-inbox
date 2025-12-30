@@ -2,7 +2,7 @@
 
 set -e
 
-rm .app-credentials
+rm -f .app-credentials
 
 # Configuration - no need to change
 BUCKET_NAME="inbox-bucket"

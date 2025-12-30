@@ -74,7 +74,7 @@ echo ""
 # Remove credentials file
 if [ -f ".app-credentials" ]; then
   echo "Removing .app-credentials file..."
-  rm .app-credentials
+  rm -f .app-credentials
 fi
 
 echo "Teardown complete!"

@@ -390,7 +390,7 @@ class API {
     },
 
     logout: () => {
-      this.clearTokens();
+      this.auth.clearTokens();
       // Redirect to signin
       window.location.href = 'index.html';
     },
