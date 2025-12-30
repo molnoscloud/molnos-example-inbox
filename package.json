@@ -1,0 +1,37 @@
+{
+  "name": "molnos-example-inbox",
+  "description": "Inbox example application running on MolnOS.",
+  "version": "0.0.1",
+  "type": "module",
+  "author": "Mikael Vesavuori",
+  "license": "MIT",
+  "keywords": [],
+  "main": "lib/index.js",
+  "module": "lib/index.mjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/molnoscloud/molnos-example-inbox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/molnoscloud/molnos-example-inbox/issues"
+  },
+  "homepage": "https://github.com/molnoscloud/molnos-example-inbox",
+  "exports": {
+    ".": {
+      "require": "./lib/index.js",
+      "import": "./lib/index.mjs"
+    }
+  },
+  "files": [
+    "/lib",
+    "!/lib/**/*.map",
+    "!/tests"
+  ],
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2",
+    "esbuild": "latest"
+  }
+}

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8" />
+    <title>MolnOS Inbox</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+
+  <body>
+    <main class="app">
+
+      <header class="app-header">
+        <h1>Inbox</h1>
+        <button id="composeBtn" class="pill">New message</button>
+      </header>
+
+      <!-- Inbox list -->
+      <section id="inboxView" class="view">
+        <ul id="messageList" class="message-list"></ul>
+      </section>
+
+      <!-- Message view -->
+      <section id="messageView" class="view hidden">
+        <button class="link" id="backToInbox">← Back</button>
+
+        <div class="message">
+          <div class="message-meta">
+            <div><strong id="msgFrom"></strong></div>
+            <div id="msgDate" class="muted"></div>
+          </div>
+
+          <h2 id="msgSubject"></h2>
+          <p id="msgBody"></p>
+          <div id="msgImages" class="message-images"></div>
+        </div>
+      </section>
+
+      <!-- Compose view -->
+      <section id="composeView" class="view hidden">
+        <button class="link" id="cancelCompose">← Cancel</button>
+
+        <form id="composeForm" class="compose">
+          <input type="text" id="to" placeholder="To" required />
+          <input type="text" id="subject" placeholder="Subject" required />
+          <textarea id="body" placeholder="Message" rows="6" required></textarea>
+
+          <div class="image-attachment">
+            <label for="imageInput" class="image-label">Attach Images</label>
+            <input type="file" id="imageInput" accept="image/*" multiple />
+            <div id="imagePreviews" class="image-previews"></div>
+          </div>
+
+          <button type="submit" class="pill">Send</button>
+        </form>
+      </section>
+
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+
+</html>

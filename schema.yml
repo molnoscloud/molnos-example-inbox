@@ -1,0 +1,3420 @@
+openapi: 3.1.0
+info:
+  title: MolnOS Core API
+  version: 0.0.1
+  description: |
+    MolnOS is a minimalist, ultra-portable microscaler that runs on almost any hardware.
+
+    It provides a control plane for managing IAM (Identity and Access Management) and services
+    such as serverless functions, static site hosting, object storage, and databases.
+
+    Authentication:
+
+    MolnOS supports two authentication methods: JWT Bearer Tokens for user sessions
+    (obtain via magic link authentication flow and include in requests as "Authorization: Bearer <jwt_token>"),
+    and Service Account API Keys for machine-to-machine authentication
+    (create via /identity/service-accounts endpoint and include in requests as "Authorization: Bearer sa.<id>.<key>").
+
+    Authorization:
+
+    MolnOS uses Role-Based Access Control (RBAC) with fine-grained permissions.
+    All authenticated endpoints check permissions before allowing access.
+  contact:
+    name: Mikael Vesavuori
+    url: https://github.com/molnoscloud/molnos-core
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://api.molnos.example.com
+    description: Production server (example)
+
+tags:
+  - name: Health
+    description: System health check endpoints
+  - name: Authentication
+    description: User authentication and session management
+  - name: Identity
+    description: User and service account management (IAM)
+  - name: Management
+    description: Service lifecycle and process management
+  - name: Databases
+    description: Key-value database operations (PikoDB)
+  - name: Functions
+    description: Serverless function deployment and execution (FaaS)
+  - name: Storage
+    description: Object storage with S3-like API
+  - name: Sites
+    description: Static site hosting and deployment
+  - name: Observability
+    description: Logging and event tracking
+
+security:
+  - BearerAuth: []
+  - ServiceAccountAuth: []
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns system health status
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+
+  # Authentication Endpoints
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Request magic link
+      description: Initiates the sign-in flow by creating and sending a magic link to the user's email
+      operationId: authLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User's email address
+                  example: user@example.com
+      responses:
+        '200':
+          description: Magic link sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: User not found (when invite-only mode is enabled)
+
+  /auth/login/cli:
+    post:
+      tags:
+        - Authentication
+      summary: CLI/Interactive login
+      description: Sign in for CLI/interactive use. Returns JWT tokens directly without email verification. Useful for command-line tools and programmatic access.
+      operationId: authLoginCLI
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User's email address
+                  example: user@example.com
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                    description: JWT access token
+                  refreshToken:
+                    type: string
+                    description: Refresh token for obtaining new access tokens
+                  exp:
+                    type: number
+                    description: Token expiry in seconds
+                  tokenType:
+                    type: string
+                    example: Bearer
+                  user:
+                    $ref: '#/components/schemas/EnrichedIdentity'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: User not found
+
+  /auth/verify:
+    get:
+      tags:
+        - Authentication
+      summary: Verify magic link
+      description: Verifies the magic link token and returns JWT tokens. Used when clicking magic link from email or forwarded from a client application.
+      operationId: authVerify
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Magic link token
+          example: 3cfc02067d48ae260456d6d87e37f8df1159dc2bb633d6793d2e1b42756bd2f3
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+          description: User's email address
+          example: user@example.com
+      responses:
+        '200':
+          description: Token verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                    description: JWT access token
+                  refreshToken:
+                    type: string
+                    description: Refresh token for obtaining new access tokens
+                  expiresIn:
+                    type: number
+                    description: Token expiry in seconds
+                  user:
+                    $ref: '#/components/schemas/Identity'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid or expired token
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Exchanges a refresh token for a new access token
+      operationId: authRefresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+                  description: The refresh token obtained from login/verify
+      responses:
+        '200':
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  expiresIn:
+                    type: number
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid or expired refresh token
+
+  # Identity Endpoints
+  /identity/whoami:
+    get:
+      tags:
+        - Identity
+      summary: Get current identity
+      description: Returns details about the currently authenticated identity
+      operationId: getWhoami
+      responses:
+        '200':
+          description: Current identity details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichedIdentity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /identity/identities:
+    get:
+      tags:
+        - Identity
+      summary: List all identities
+      description: Returns all users and service accounts
+      operationId: listIdentities
+      responses:
+        '200':
+          description: List of all identities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Identity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /identity/users:
+    get:
+      tags:
+        - Identity
+      summary: List all users
+      description: Returns all user identities
+      operationId: listUsers
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Identity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Identity
+      summary: Create user
+      description: Creates a new user identity
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - name
+              properties:
+                email:
+                  type: string
+                  format: email
+                name:
+                  type: string
+                roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RoleId'
+                  default: ['user']
+                active:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichedIdentity'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /identity/users/{userId}:
+    get:
+      tags:
+        - Identity
+      summary: Get user
+      description: Returns a specific user by ID
+      operationId: getUser
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichedIdentity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Identity
+      summary: Update user
+      description: Updates user properties (name, email, roles, metadata)
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RoleId'
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichedIdentity'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Identity
+      summary: Delete user
+      description: Deletes a user identity
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /identity/service-accounts:
+    get:
+      tags:
+        - Identity
+      summary: List service accounts
+      description: Returns all service account identities (API keys excluded)
+      operationId: listServiceAccounts
+      responses:
+        '200':
+          description: List of service accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    roles:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/RoleId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Identity
+      summary: Create service account
+      description: Creates a new service account with API key
+      operationId: createServiceAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - description
+                - roles
+              properties:
+                name:
+                  type: string
+                  description: Service account name
+                description:
+                  type: string
+                  description: Purpose of this service account
+                roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RoleId'
+                  description: Roles to assign
+      responses:
+        '201':
+          description: Service account created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/EnrichedIdentity'
+                  - type: object
+                    properties:
+                      apiKey:
+                        type: string
+                        description: API key (store securely, shown only once)
+                        example: sa.abc123.def456789
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /identity/service-accounts/{serviceAccountId}:
+    get:
+      tags:
+        - Identity
+      summary: Get service account
+      description: Returns a specific service account by ID
+      operationId: getServiceAccount
+      parameters:
+        - $ref: '#/components/parameters/ServiceAccountId'
+      responses:
+        '200':
+          description: Service account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichedIdentity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Identity
+      summary: Update service account
+      description: Updates service account properties
+      operationId: updateServiceAccount
+      parameters:
+        - $ref: '#/components/parameters/ServiceAccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RoleId'
+      responses:
+        '200':
+          description: Service account updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichedIdentity'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Identity
+      summary: Delete service account
+      description: Deletes a service account and revokes its API key
+      operationId: deleteServiceAccount
+      parameters:
+        - $ref: '#/components/parameters/ServiceAccountId'
+      responses:
+        '200':
+          description: Service account deleted successfully
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /identity/service-accounts/{serviceAccountId}/rotate-key:
+    post:
+      tags:
+        - Identity
+      summary: Rotate service account API key
+      description: Generates a new API key for the service account and invalidates the old one
+      operationId: rotateServiceAccountKey
+      parameters:
+        - $ref: '#/components/parameters/ServiceAccountId'
+      responses:
+        '200':
+          description: API key rotated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  apiKey:
+                    type: string
+                    description: New API key (store securely, shown only once)
+                    example: sa.abc123.newkey789
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ROLES ENDPOINTS
+  /identity/roles:
+    get:
+      tags:
+        - Identity
+      summary: List all roles
+      description: Returns all roles (both base and custom)
+      operationId: listRoles
+      responses:
+        '200':
+          description: List of roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Identity
+      summary: Create custom role
+      description: Creates a new custom role with specified permissions
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - roleId
+                - name
+                - description
+                - permissions
+              properties:
+                roleId:
+                  type: string
+                  description: Unique identifier for the role
+                  example: data-analyst
+                name:
+                  type: string
+                  description: Human-readable name for the role
+                  example: Data Analyst
+                description:
+                  type: string
+                  description: Description of the role's purpose
+                  example: Role for data analysts with read-only database access
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                  description: Array of permission strings
+                  example:
+                    - databases.read
+                    - observability.read
+                constraints:
+                  $ref: '#/components/schemas/Constraints'
+      responses:
+        '201':
+          description: Role created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Role with this ID already exists
+
+  /identity/roles/{roleId}:
+    get:
+      tags:
+        - Identity
+      summary: Get role
+      description: Returns a specific role by ID
+      operationId: getRole
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Role identifier
+          example: administrator
+      responses:
+        '200':
+          description: Role details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Identity
+      summary: Update role
+      description: Updates role properties (name, description, permissions, or constraints)
+      operationId: updateRole
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Role identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Updated role name
+                description:
+                  type: string
+                  description: Updated role description
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                  description: Updated permissions array
+                constraints:
+                  $ref: '#/components/schemas/Constraints'
+      responses:
+        '200':
+          description: Role updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Identity
+      summary: Delete role
+      description: Deletes a custom role (base roles cannot be deleted)
+      operationId: deleteRole
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Role identifier
+      responses:
+        '200':
+          description: Role deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Role deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Cannot delete base roles
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Management Endpoints
+  /management/services:
+    get:
+      tags:
+        - Management
+      summary: List all services
+      description: Returns all registered services and their configurations
+      operationId: listServices
+      responses:
+        '200':
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /management/service:
+    post:
+      tags:
+        - Management
+      summary: Register service
+      description: |
+        Registers a new service with the control plane. Supports three registration modes:
+        (1) Predefined Service - Register by name only (e.g., {"name": "sites"}). Available predefined services are: storage, functions, sites, databases, observability.
+        (2) Predefined Service with Overrides - Override specific settings (e.g., {"name": "sites", "port": 4000}).
+        (3) Custom Service - Full configuration for custom services (e.g., {"name": "custom-service", "path": "./custom.mjs", "port": 5000, "prefix": "/custom"}).
+      operationId: registerService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/PredefinedServiceRegistration'
+                - $ref: '#/components/schemas/ServiceConfig'
+            examples:
+              predefinedService:
+                summary: Register predefined service
+                value:
+                  name: sites
+              predefinedWithOverride:
+                summary: Predefined service with overrides
+                value:
+                  name: sites
+                  port: 4000
+              customService:
+                summary: Custom service
+                value:
+                  name: my-custom-service
+                  path: ./custom.mjs
+                  port: 5000
+                  prefix: /custom
+      responses:
+        '201':
+          description: Service registered successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /management/service/{serviceName}:
+    get:
+      tags:
+        - Management
+      summary: Get service
+      description: Returns service configuration and runtime status
+      operationId: getService
+      parameters:
+        - $ref: '#/components/parameters/ServiceName'
+      responses:
+        '200':
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Management
+      summary: Update service
+      description: Updates service configuration
+      operationId: updateService
+      parameters:
+        - $ref: '#/components/parameters/ServiceName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceConfig'
+      responses:
+        '200':
+          description: Service updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Management
+      summary: Remove service
+      description: Stops and unregisters a service
+      operationId: removeService
+      parameters:
+        - $ref: '#/components/parameters/ServiceName'
+      responses:
+        '200':
+          description: Service removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serviceName:
+                    type: string
+                  removed:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /management/service/{serviceName}/start:
+    get:
+      tags:
+        - Management
+      summary: Start service
+      description: Starts a registered service
+      operationId: startService
+      parameters:
+        - $ref: '#/components/parameters/ServiceName'
+      responses:
+        '200':
+          description: Service started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serviceName:
+                    type: string
+                  isStarted:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /management/service/{serviceName}/stop:
+    get:
+      tags:
+        - Management
+      summary: Stop service
+      description: Stops a running service
+      operationId: stopService
+      parameters:
+        - $ref: '#/components/parameters/ServiceName'
+      responses:
+        '200':
+          description: Service stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serviceName:
+                    type: string
+                  stopped:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /management/service/{serviceName}/restart:
+    get:
+      tags:
+        - Management
+      summary: Restart service
+      description: Restarts a service (stop then start)
+      operationId: restartService
+      parameters:
+        - $ref: '#/components/parameters/ServiceName'
+      responses:
+        '200':
+          description: Service restarted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serviceName:
+                    type: string
+                  removed:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /management/service/{serviceName}/logs:
+    get:
+      tags:
+        - Management
+      summary: Get service logs
+      description: Retrieves logs for a specific service from the observability service
+      operationId: getServiceLogs
+      parameters:
+        - $ref: '#/components/parameters/ServiceName'
+        - name: limit
+          in: query
+          schema:
+            type: number
+            default: 100
+          description: Maximum number of log entries to return
+        - name: offset
+          in: query
+          schema:
+            type: number
+            default: 0
+          description: Offset for pagination
+      responses:
+        '200':
+          description: Service logs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: number
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LogEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Databases Endpoints (Proxied)
+  /databases/table:
+    get:
+      tags:
+        - Databases
+      summary: Get table size
+      description: Returns the number of items in a table
+      operationId: getTableSize
+      parameters:
+        - name: tableName
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Name of the table
+      responses:
+        '200':
+          description: Table size
+          content:
+            application/json:
+              schema:
+                type: number
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /databases/get:
+    post:
+      tags:
+        - Databases
+      summary: Get value
+      description: Retrieves a value from a table by key
+      operationId: getDatabaseValue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tableName
+                - key
+              properties:
+                tableName:
+                  type: string
+                key:
+                  type: string
+      responses:
+        '200':
+          description: Value retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /databases/write:
+    post:
+      tags:
+        - Databases
+      summary: Write value
+      description: Writes a value to a table
+      operationId: writeDatabaseValue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tableName
+                - key
+                - value
+              properties:
+                tableName:
+                  type: string
+                key:
+                  type: string
+                value:
+                  type: object
+                  additionalProperties: true
+                expiration:
+                  type: number
+                  description: TTL in seconds
+                dictionaryName:
+                  type: string
+                  description: Optional dictionary grouping
+      responses:
+        '200':
+          description: Value written successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /databases/delete:
+    delete:
+      tags:
+        - Databases
+      summary: Delete value
+      description: Deletes a value from a table
+      operationId: deleteDatabaseValue
+      parameters:
+        - name: tableName
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Value deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /databases/tables:
+    get:
+      tags:
+        - Databases
+      summary: List tables
+      description: Returns all database tables
+      operationId: listTables
+      responses:
+        '200':
+          description: List of tables
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tables:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DatabaseTable'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /databases/tables/{tableName}/items:
+    get:
+      tags:
+        - Databases
+      summary: List items in table
+      description: Returns all items (key-value pairs) in a specific table
+      operationId: listTableItems
+      parameters:
+        - name: tableName
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the table
+      responses:
+        '200':
+          description: List of items in the table
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                          description: Item key
+                        value:
+                          type: object
+                          description: Item value (JSON object)
+                          additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /databases/tables/{tableName}:
+    get:
+      tags:
+        - Databases
+      summary: Get table details
+      description: Returns detailed information about a specific table
+      operationId: getTable
+      parameters:
+        - name: tableName
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the table
+      responses:
+        '200':
+          description: Table details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseTable'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Databases
+      summary: Create table
+      description: Creates a new empty database table
+      operationId: createTable
+      parameters:
+        - name: tableName
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the table to create
+      responses:
+        '201':
+          description: Table created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  name:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Table already exists
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Table already exists'
+
+    delete:
+      tags:
+        - Databases
+      summary: Delete table
+      description: Deletes an entire database table and all its data
+      operationId: deleteTable
+      parameters:
+        - name: tableName
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Name of the table to delete
+      responses:
+        '200':
+          description: Table deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  name:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Functions Endpoints (Proxied)
+  /functions/list:
+    get:
+      tags:
+        - Functions
+      summary: List functions
+      description: Returns all deployed functions
+      operationId: listFunctions
+      responses:
+        '200':
+          description: List of functions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: number
+                  functions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Function'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /functions/deploy:
+    post:
+      tags:
+        - Functions
+      summary: Deploy function
+      description: |
+        Deploys a new serverless function with optional HTTP method restrictions and service bindings.
+
+        Function Code Format:
+        Functions must be written as a complete async function that accepts (request, context) parameters.
+        The request parameter contains: method, path, subpath, query, headers, body.
+        The context parameter contains: request, functionId, functionName, bindings.
+
+        Security:
+        Environment variables are NOT exposed to functions to prevent credential leakage.
+        Internal Molnos system headers (x-molnos-*) are filtered from the request.headers by default.
+        User authorization headers (Authorization, Cookie, etc.) ARE passed through for implementing custom auth.
+        Use the bindings system to grant controlled access to services.
+
+        Service Bindings:
+        Functions can declare bindings to other services (databases, storage, etc.) to securely access them
+        with service account permissions. Each function gets its own service account with minimal, scoped permissions.
+
+        Three granularity levels are supported (inferred from structure):
+        Service-level (no "resource" specified - grants access to entire service),
+        Resource-level ("resource" specified, no "targets" - grants access to all resources of that type), and
+        Action-level ("resource" + "actions" + "targets" - grants access to specific resources only).
+
+        Deploying user must have "functions.function.create" permission to deploy functions with bindings.
+      operationId: deployFunction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - code
+              properties:
+                name:
+                  type: string
+                  description: Function name
+                  example: my-function
+                code:
+                  type: string
+                  description: |
+                    Complete JavaScript function code. Must be an async function named "handler"
+                    that accepts (request, context) parameters.
+                  example: |
+                    async function handler(request, context) {
+                      return {
+                        statusCode: 200,
+                        body: { message: 'Hello from ' + context.functionName }
+                      };
+                    }
+                methods:
+                  type: array
+                  description: Optional array of allowed HTTP methods. If not specified, all methods are allowed.
+                  items:
+                    type: string
+                    enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+                  example: ["GET", "POST"]
+                passAllHeaders:
+                  type: boolean
+                  description: |
+                    Whether to pass all request headers to the function, including internal Molnos system headers.
+                    When false or omitted (default), internal Molnos headers (x-molnos-*) are filtered out.
+                    User authorization headers (Authorization, Cookie, etc.) are always passed through.
+                  default: false
+                  example: false
+                allowUnauthenticated:
+                  type: boolean
+                  description: |
+                    Whether to allow unauthenticated execution of this function.
+                    When false or omitted (default), the function requires a valid Bearer token in the Authorization header.
+                    When true, the function can be executed without authentication.
+                  default: false
+                  example: false
+                bindings:
+                  type: array
+                  description: |
+                    Optional array of service bindings. Each function gets a dedicated service account
+                    with minimal permissions based on declared bindings. Requires IdentityService to be configured.
+                  items:
+                    type: object
+                    required:
+                      - service
+                      - permissions
+                    properties:
+                      service:
+                        type: string
+                        description: Service name to bind to
+                        enum: [databases, storage, observability, sites, functions]
+                        example: databases
+                      permissions:
+                        type: array
+                        description: Array of permission declarations
+                        items:
+                          type: object
+                          properties:
+                            resource:
+                              type: string
+                              description: Resource type (e.g., "table", "bucket"). Optional - omit for service-level access.
+                              example: table
+                            actions:
+                              type: array
+                              description: Array of actions (e.g., ["read", "write"]). Defaults to ["*"] if not specified.
+                              items:
+                                type: string
+                              example: ["read", "write"]
+                            targets:
+                              type: array
+                              description: Specific resource names. Optional - omit for resource-level access to all resources.
+                              items:
+                                type: string
+                              example: ["users-table", "posts-table"]
+                  example:
+                    - service: databases
+                      permissions:
+                        - resource: table
+                          actions: ["read", "write"]
+                          targets: ["users-table"]
+                    - service: storage
+                      permissions:
+                        - resource: bucket
+                          actions: ["write"]
+      responses:
+        '201':
+          description: Function deployed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  function:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: Function ID
+                      name:
+                        type: string
+                        description: Function name
+                      endpoint:
+                        type: string
+                        description: Function execution endpoint
+                      methods:
+                        type: array
+                        description: Allowed HTTP methods (if restricted)
+                        items:
+                          type: string
+                      passAllHeaders:
+                        type: boolean
+                        description: Whether all headers are passed through to the function
+                      allowUnauthenticated:
+                        type: boolean
+                        description: Whether the function allows unauthenticated execution
+                      bindings:
+                        type: array
+                        description: Service bindings for this function (if configured)
+                        items:
+                          type: object
+                          required:
+                            - service
+                            - permissions
+                          properties:
+                            service:
+                              type: string
+                              enum: [databases, storage, observability, sites, functions]
+                            permissions:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  resource:
+                                    type: string
+                                  actions:
+                                    type: array
+                                    items:
+                                      type: string
+                                  targets:
+                                    type: array
+                                    items:
+                                      type: string
+                      serviceAccountId:
+                        type: string
+                        description: Service account ID for bindings (if configured). Token is never exposed.
+                      createdAt:
+                        type: string
+                        format: date-time
+                        description: Creation timestamp
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /functions/{functionId}:
+    get:
+      tags:
+        - Functions
+      summary: Get function
+      description: Returns function details
+      operationId: getFunction
+      parameters:
+        - $ref: '#/components/parameters/FunctionId'
+      responses:
+        '200':
+          description: Function details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  function:
+                    $ref: '#/components/schemas/Function'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Functions
+      summary: Update function
+      description: Updates function code, HTTP method restrictions, service bindings, and/or header filtering. At least one of code, methods, bindings, or passAllHeaders must be provided.
+      operationId: updateFunction
+      parameters:
+        - $ref: '#/components/parameters/FunctionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: Updated function code
+                methods:
+                  type: array
+                  description: Updated HTTP method restrictions. Pass empty array to remove restrictions.
+                  items:
+                    type: string
+                    enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+                  example: ["GET", "POST"]
+                passAllHeaders:
+                  type: boolean
+                  description: |
+                    Whether to pass all request headers to the function, including internal Molnos system headers.
+                    Set to true to disable header filtering, false to enable filtering of internal headers.
+                  example: false
+                allowUnauthenticated:
+                  type: boolean
+                  description: |
+                    Whether to allow unauthenticated execution of this function.
+                    Set to true to allow execution without authentication, false to require a Bearer token.
+                  example: false
+                bindings:
+                  type: array
+                  description: |
+                    Updated service bindings. Updates the function's service account role permissions.
+                    Requires IdentityService to be configured.
+                  items:
+                    type: object
+                    required:
+                      - service
+                      - permissions
+                    properties:
+                      service:
+                        type: string
+                        enum: [databases, storage, observability, sites, functions]
+                      permissions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            resource:
+                              type: string
+                            actions:
+                              type: array
+                              items:
+                                type: string
+                            targets:
+                              type: array
+                              items:
+                                type: string
+              minProperties: 1
+      responses:
+        '200':
+          description: Function updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  function:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: Function ID
+                      name:
+                        type: string
+                        description: Function name
+                      endpoint:
+                        type: string
+                        description: Function execution endpoint
+                      methods:
+                        type: array
+                        description: Allowed HTTP methods (if restricted)
+                        items:
+                          type: string
+                      bindings:
+                        type: array
+                        description: Service bindings for this function
+                        items:
+                          type: object
+                          properties:
+                            service:
+                              type: string
+                            permissions:
+                              type: array
+                              items:
+                                type: object
+                      passAllHeaders:
+                        type: boolean
+                        description: Whether all headers are passed through to the function
+                      allowUnauthenticated:
+                        type: boolean
+                        description: Whether the function allows unauthenticated execution
+                      updatedAt:
+                        type: string
+                        format: date-time
+                        description: Last update timestamp
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Functions
+      summary: Delete function
+      description: Deletes a deployed function
+      operationId: deleteFunction
+      parameters:
+        - $ref: '#/components/parameters/FunctionId'
+      responses:
+        '200':
+          description: Function deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /functions/{functionId}/config:
+    get:
+      tags:
+        - Functions
+      summary: Get function configuration
+      description: Returns function details including the source code
+      operationId: getFunctionConfig
+      parameters:
+        - $ref: '#/components/parameters/FunctionId'
+      responses:
+        '200':
+          description: Function configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  function:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: Function ID
+                      name:
+                        type: string
+                        description: Function name
+                      endpoint:
+                        type: string
+                        description: Function execution endpoint
+                      filePath:
+                        type: string
+                        description: Path to the function file on disk
+                      code:
+                        type: string
+                        description: Function source code
+                      methods:
+                        type: array
+                        description: Allowed HTTP methods (if restricted)
+                        items:
+                          type: string
+                      bindings:
+                        type: array
+                        description: Service bindings for this function
+                        items:
+                          type: object
+                          properties:
+                            service:
+                              type: string
+                            permissions:
+                              type: array
+                              items:
+                                type: object
+                      passAllHeaders:
+                        type: boolean
+                        description: Whether all headers are passed through to the function
+                      allowUnauthenticated:
+                        type: boolean
+                        description: Whether the function allows unauthenticated execution
+                      createdAt:
+                        type: string
+                        format: date-time
+                        description: Creation timestamp
+                      updatedAt:
+                        type: string
+                        format: date-time
+                        description: Last update timestamp
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: Failed to read function code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  message:
+                    type: string
+
+  /functions/stats:
+    get:
+      tags:
+        - Functions
+      summary: Get function statistics
+      description: Returns statistics about deployed functions
+      operationId: getFunctionStats
+      responses:
+        '200':
+          description: Function statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  stats:
+                    type: object
+                    properties:
+                      totalFunctions:
+                        type: number
+                      functions:
+                        type: array
+                        items:
+                          type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /functions/run/{functionId}:
+    get:
+      tags:
+        - Functions
+      summary: Execute function (GET)
+      description: |
+        Executes a function with GET request. May return 405 if function has HTTP method restrictions.
+
+        Wildcard Paths: Functions support wildcard paths. You can append any path after the functionId (e.g., /functions/run/{functionId}/api/users/123), and the function will receive the additional path in context.request.subpath. This allows deploying bundled APIs with their own internal routing.
+      operationId: executeFunctionGet
+      parameters:
+        - $ref: '#/components/parameters/FunctionId'
+      responses:
+        '200':
+          description: Function executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          description: Method not allowed - function has HTTP method restrictions
+          headers:
+            Allow:
+              schema:
+                type: string
+              description: Comma-separated list of allowed HTTP methods
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Method Not Allowed
+                  message:
+                    type: string
+                    example: This function only accepts GET, POST
+        '500':
+          description: Function execution error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags:
+        - Functions
+      summary: Execute function (POST)
+      description: |
+        Executes a function with POST request and body. May return 405 if function has HTTP method restrictions.
+
+        Wildcard Paths: Functions support wildcard paths. You can append any path after the functionId (e.g., /functions/run/{functionId}/api/users), and the function will receive the additional path in context.request.subpath. This allows deploying bundled APIs with their own internal routing.
+      operationId: executeFunctionPost
+      parameters:
+        - $ref: '#/components/parameters/FunctionId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Function executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          description: Method not allowed - function has HTTP method restrictions
+          headers:
+            Allow:
+              schema:
+                type: string
+              description: Comma-separated list of allowed HTTP methods
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Method Not Allowed
+                  message:
+                    type: string
+                    example: This function only accepts GET, POST
+        '500':
+          description: Function execution error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Storage Endpoints (Proxied)
+  /storage/buckets:
+    get:
+      tags:
+        - Storage
+      summary: List buckets
+      description: Returns all storage buckets
+      operationId: listBuckets
+      responses:
+        '200':
+          description: List of buckets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buckets:
+                    type: array
+                    items:
+                      type: string
+                    description: Array of bucket names
+              example:
+                buckets: ['my-bucket-1', 'my-bucket-2', 'my-bucket-3']
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /storage/buckets/{bucket}:
+    get:
+      tags:
+        - Storage
+      summary: Get bucket statistics
+      description: Returns statistics about a bucket including object count, total size, and public status
+      operationId: getBucketStats
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+      responses:
+        '200':
+          description: Bucket statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bucket:
+                    type: string
+                    description: Bucket name
+                    example: 'my-bucket'
+                  objectCount:
+                    type: number
+                    description: Total number of objects in the bucket
+                    example: 42
+                  totalSize:
+                    type: number
+                    description: Total size of all objects in bytes
+                    example: 1048576
+                  public:
+                    type: boolean
+                    description: Whether the bucket is public
+                    example: false
+              example:
+                bucket: 'my-bucket'
+                objectCount: 42
+                totalSize: 1048576
+                public: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Bucket not found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Bucket not found'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Internal server error'
+
+    post:
+      tags:
+        - Storage
+      summary: Create bucket
+      description: Creates a new storage bucket. Buckets are private by default and can optionally be made public.
+      operationId: createBucket
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                public:
+                  type: boolean
+                  description: Whether the bucket should be public. Defaults to false (private).
+                  default: false
+                  example: false
+      responses:
+        '200':
+          description: Bucket created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  bucket:
+                    type: string
+                  public:
+                    type: boolean
+                    description: Whether the bucket is public
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    patch:
+      tags:
+        - Storage
+      summary: Update bucket configuration
+      description: Updates bucket configuration such as public/private status
+      operationId: updateBucket
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                public:
+                  type: boolean
+                  description: Whether the bucket should be public or private
+                  example: true
+      responses:
+        '200':
+          description: Bucket updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  bucket:
+                    type: string
+                  public:
+                    type: boolean
+                    description: Current public/private status of the bucket
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Internal server error'
+
+    delete:
+      tags:
+        - Storage
+      summary: Delete bucket
+      description: Deletes a storage bucket
+      operationId: deleteBucket
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+      responses:
+        '200':
+          description: Bucket deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  bucket:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /storage/buckets/{bucket}/objects:
+    get:
+      tags:
+        - Storage
+      summary: List objects in bucket
+      description: |
+        Lists objects in a bucket with S3-style prefix filtering for hierarchical navigation.
+
+        Behavior:
+        Without prefix - shows immediate children at bucket root (files + virtual folders).
+        With prefix - shows immediate children within that prefix path.
+        Virtual folders are created from common prefixes (objects grouped by first path segment).
+        Only shows one level deep - nested objects are represented as folders.
+
+        Example:
+        For a bucket containing file.txt, docs/readme.md, and docs/api/spec.json,
+        no prefix returns file.txt (file) and docs/ (folder),
+        prefix docs/ returns readme.md (file) and api/ (folder),
+        prefix docs/api/ returns spec.json (file).
+
+        Objects include metadata: size, modification time, and type (file/folder).
+        Folders end with a trailing slash (/).
+      operationId: listObjects
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+        - name: prefix
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            S3-style prefix filter for hierarchical navigation.
+            Returns only immediate children under this path.
+            Omit or use empty string for bucket root.
+
+            Examples:
+            - '' or omitted: Root level
+            - 'docs/': Objects directly under docs/
+            - 'docs/api/': Objects directly under docs/api/
+          example: 'docs/'
+      responses:
+        '200':
+          description: List of objects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  objects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StorageObject'
+                    description: Array of objects with metadata
+                  prefix:
+                    type: string
+                    description: The prefix used for filtering (echoed from query)
+              examples:
+                rootLevel:
+                  summary: List root level objects
+                  value:
+                    objects:
+                      - key: 'docs/'
+                        size: 0
+                        lastModified: '2025-12-19T13:45:00.000Z'
+                        type: 'folder'
+                      - key: 'file.txt'
+                        size: 1234
+                        lastModified: '2025-12-19T13:45:00.000Z'
+                        type: 'file'
+                    prefix: ''
+                withPrefix:
+                  summary: List objects in folder
+                  value:
+                    objects:
+                      - key: 'subfolder/'
+                        size: 0
+                        lastModified: '2025-12-19T13:45:00.000Z'
+                        type: 'folder'
+                      - key: 'readme.md'
+                        size: 5678
+                        lastModified: '2025-12-19T13:45:00.000Z'
+                        type: 'file'
+                    prefix: 'docs/'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Bucket not found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Bucket not found'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Internal server error'
+
+    put:
+      tags:
+        - Storage
+      summary: Upload object
+      description: |
+        Uploads/creates an object in a bucket.
+
+        Supported upload methods:
+        (1) JSON upload (for text content) - Send JSON with "key" and "content" fields.
+        (2) Binary upload with query param - Send raw binary with ?key=path/to/file query parameter.
+        (3) Multipart form upload - Send multipart/form-data with "file" and "key" fields.
+
+        For binary files (images, videos, etc.), use method 2 or 3 to avoid corruption.
+      operationId: putObject
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+        - name: key
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Object key/path (required for binary uploads).
+            Use this for application/octet-stream or other binary content types.
+          example: 'images/photo.jpg'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+                - content
+              properties:
+                key:
+                  type: string
+                  description: Object key/path
+                  example: 'documents/readme.txt'
+                content:
+                  type: string
+                  description: Object content (text)
+                  example: 'Hello, World!'
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - key
+                - file
+              properties:
+                key:
+                  type: string
+                  description: Object key/path
+                  example: 'images/photo.jpg'
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: Raw binary data (use ?key=path query parameter)
+      responses:
+        '200':
+          description: Object uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  bucket:
+                    type: string
+                  key:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Storage
+      summary: Get object
+      description: Retrieves an object from a bucket
+      operationId: getObject
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+              properties:
+                key:
+                  type: string
+      responses:
+        '200':
+          description: Object retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bucket:
+                    type: string
+                  key:
+                    type: string
+                  content:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Storage
+      summary: Delete object
+      description: Deletes an object from a bucket
+      operationId: deleteObject
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+              properties:
+                key:
+                  type: string
+      responses:
+        '200':
+          description: Object deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  bucket:
+                    type: string
+                  key:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /storage/buckets/{bucket}/objects/{key}:
+    get:
+      tags:
+        - Storage
+      summary: Get object via direct URL
+      description: |
+        Retrieves an object from a bucket using a direct GET request.
+        This endpoint is designed for direct browser access and CDN-style delivery.
+
+        Features:
+        - Returns raw file content with appropriate Content-Type header
+        - Supports URL-encoded filenames (spaces and special characters)
+        - Works with public buckets (no authentication required for public buckets)
+        - Automatically detects content type from file extension
+        - Suitable for embedding in web pages (images, videos, etc.)
+
+        Public Access:
+        For public buckets, this endpoint allows unauthenticated GET requests.
+        For private buckets, authentication is required.
+
+        Example URLs:
+        - /storage/buckets/my-bucket/objects/image.png
+        - /storage/buckets/docs/objects/file%20with%20spaces.pdf
+        - /storage/buckets/media/objects/videos/intro.mp4
+      operationId: getObjectDirect
+      parameters:
+        - $ref: '#/components/parameters/BucketName'
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+          description: |
+            Object key/path within the bucket.
+            Can include path separators (/) for nested objects.
+            Special characters should be URL-encoded.
+          example: 'images/photo.png'
+      responses:
+        '200':
+          description: |
+            Object content with appropriate Content-Type header.
+            Content-Type is automatically determined from file extension.
+            For unknown file types, returns application/octet-stream.
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+            video/*:
+              schema:
+                type: string
+                format: binary
+            audio/*:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: object
+            text/plain:
+              schema:
+                type: string
+            text/html:
+              schema:
+                type: string
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid object path
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Invalid object path'
+        '404':
+          description: Object not found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Object not found'
+        '500':
+          description: Error retrieving object
+          content:
+            application/json:
+              schema:
+                type: string
+                example: 'Error retrieving object'
+
+  # Sites Endpoints (Proxied)
+  /sites/projects:
+    get:
+      tags:
+        - Sites
+      summary: List static sites
+      description: Returns all deployed static site projects
+      operationId: listSites
+      responses:
+        '200':
+          description: List of deployed sites
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: number
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SiteProject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Sites
+      summary: Deploy static site
+      description: Uploads and deploys a static site project
+      operationId: deploySite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                projectId:
+                  type: string
+                  description: Optional project ID (auto-generated if not provided)
+                files:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - path
+                      - content
+                    properties:
+                      path:
+                        type: string
+                        description: File path relative to project root
+                      content:
+                        type: string
+                        description: Base64-encoded file content
+      responses:
+        '200':
+          description: Site deployed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  projectId:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sites/projects/{projectId}:
+    delete:
+      tags:
+        - Sites
+      summary: Delete static site
+      description: Deletes a static site project
+      operationId: deleteSite
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Site deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  projectId:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sites/projects/{projectId}/{filepath}:
+    get:
+      tags:
+        - Sites
+      summary: Serve static file
+      description: Serves a static file from a deployed project. This endpoint is publicly accessible without authentication.
+      operationId: serveStaticFile
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: filepath
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File path within the project (defaults to index.html if not specified)
+      responses:
+        '200':
+          description: File served successfully
+          content:
+            text/html:
+              schema:
+                type: string
+            text/css:
+              schema:
+                type: string
+            application/javascript:
+              schema:
+                type: string
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Observability Endpoints (Proxied)
+  /observability/events:
+    get:
+      tags:
+        - Observability
+      summary: Query logs
+      description: Retrieves log events with optional filtering
+      operationId: queryLogs
+      parameters:
+        - name: startTime
+          in: query
+          schema:
+            type: number
+            format: int64
+          description: Start timestamp (milliseconds)
+        - name: endTime
+          in: query
+          schema:
+            type: number
+            format: int64
+          description: End timestamp (milliseconds)
+        - name: service
+          in: query
+          schema:
+            type: string
+          description: Filter by service name or prefix (e.g., "functions" matches "functions.abc123")
+        - name: level
+          in: query
+          schema:
+            type: string
+            enum: [info, warn, error, debug]
+          description: Filter by log level
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search term to filter by message content or service name (case-insensitive)
+        - name: limit
+          in: query
+          schema:
+            type: number
+            default: 1000
+          description: Maximum number of events to return
+        - name: offset
+          in: query
+          schema:
+            type: number
+            default: 0
+          description: Offset for pagination
+      responses:
+        '200':
+          description: Log events retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: number
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LogEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Observability
+      summary: Log event
+      description: Creates a new log event
+      operationId: logEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - service
+                - level
+                - message
+              properties:
+                service:
+                  type: string
+                level:
+                  type: string
+                  enum: [info, warn, error, debug]
+                message:
+                  type: string
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Event logged successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  event:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      timestamp:
+                        type: number
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /observability/stats:
+    get:
+      tags:
+        - Observability
+      summary: Get log statistics
+      description: Returns statistics about stored logs
+      operationId: getLogStats
+      responses:
+        '200':
+          description: Log statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  stats:
+                    type: object
+                    properties:
+                      totalLogFiles:
+                        type: number
+                      logFiles:
+                        type: array
+                        items:
+                          type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /observability/events/cleanup:
+    delete:
+      tags:
+        - Observability
+      summary: Cleanup old logs
+      description: Deletes logs older than specified days
+      operationId: cleanupLogs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - olderThanDays
+              properties:
+                olderThanDays:
+                  type: number
+                  description: Delete logs older than this many days
+      responses:
+        '200':
+          description: Logs cleaned up successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deletedCount:
+                    type: number
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /observability/flush:
+    post:
+      tags:
+        - Observability
+      summary: Flush log buffer
+      description: Forces write buffer to flush to disk
+      operationId: flushLogs
+      responses:
+        '200':
+          description: Buffer flushed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication flow
+    ServiceAccountAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: Service account API key in format 'sa.<id>.<key>'
+
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: User identity ID
+
+    ServiceAccountId:
+      name: serviceAccountId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Service account identity ID
+
+    ServiceName:
+      name: serviceName
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Service name
+
+    FunctionId:
+      name: functionId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Function ID (SHA256 hash)
+
+    BucketName:
+      name: bucket
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Bucket name
+
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Static site project ID
+
+  schemas:
+    RoleId:
+      type: string
+      description: Role identifier (can be built-in like 'administrator' or 'user', or custom role ID)
+      example: administrator
+
+    Identity:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identity ID
+        name:
+          type: string
+          description: Display name
+        type:
+          type: string
+          enum: [user, service_account]
+          description: Identity type
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleId'
+          description: Assigned roles
+        metadata:
+          type: object
+          properties:
+            email:
+              type: string
+              format: email
+              description: User email (for user type)
+            description:
+              type: string
+              description: Description (for service account type)
+            active:
+              type: boolean
+              description: Account active status
+            createdAt:
+              type: string
+              format: date-time
+            lastLogin:
+              type: string
+              format: date-time
+          additionalProperties: true
+
+    EnrichedIdentity:
+      allOf:
+        - $ref: '#/components/schemas/Identity'
+        - type: object
+          properties:
+            enrichedRoles:
+              type: array
+              items:
+                $ref: '#/components/schemas/Role'
+              description: Full role objects with policies
+
+    Role:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/RoleId'
+        name:
+          type: string
+        description:
+          type: string
+        policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Policy'
+        constraints:
+          $ref: '#/components/schemas/Constraints'
+
+    Constraints:
+      type: object
+      properties:
+        assumable_by:
+          type: object
+          properties:
+            identities:
+              type: array
+              items:
+                type: string
+              description: List of identity IDs that can assume this role
+            roles:
+              type: array
+              items:
+                type: string
+              description: List of role IDs whose members can assume this role
+            services:
+              type: array
+              items:
+                type: string
+              description: List of services that can assume this role
+        assumption_constraints:
+          type: object
+          properties:
+            max_duration:
+              type: number
+              description: Maximum duration in seconds for role assumption
+            require_reason:
+              type: boolean
+              description: Whether a reason is required for assuming this role
+            audit_level:
+              type: string
+              enum: [low, medium, high]
+              description: Audit level for role assumption
+
+    Policy:
+      type: object
+      properties:
+        effect:
+          type: string
+          enum: [allow, deny]
+        actions:
+          type: array
+          items:
+            type: string
+          description: Actions (supports wildcards)
+          example: ['identity.user.create', 'identity.*.get']
+        targets:
+          type: array
+          items:
+            type: string
+          description: Target resources (supports wildcards)
+          example: ['service:identity', '*']
+
+    PredefinedServiceRegistration:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          enum: [storage, functions, sites, databases, observability]
+          description: |
+            Name of the predefined service to register. Each predefined service comes with
+            default configuration:
+            storage (port 3001, prefix /storage),
+            functions (port 3002, prefix /functions),
+            sites (port 3003, prefix /sites),
+            databases (port 3004, prefix /databases),
+            observability (port 3005, prefix /observability).
+        port:
+          type: number
+          minimum: 1
+          maximum: 65535
+          description: Override default service port
+        prefix:
+          type: string
+          pattern: '^/'
+          description: Override default API path prefix
+        args:
+          type: array
+          items:
+            type: string
+          description: Override default command line arguments
+        restartPolicy:
+          $ref: '#/components/schemas/RestartPolicy'
+        healthCheck:
+          $ref: '#/components/schemas/HealthCheck'
+
+    ServiceConfig:
+      type: object
+      required:
+        - name
+        - path
+        - port
+        - prefix
+      properties:
+        name:
+          type: string
+          description: Unique service name
+        path:
+          type: string
+          description: Path to compiled Node.js module
+        port:
+          type: number
+          minimum: 1
+          maximum: 65535
+          description: Service port
+        prefix:
+          type: string
+          pattern: '^/'
+          description: API path prefix
+          example: /databases
+        active:
+          type: boolean
+          default: true
+          description: Whether service is active
+        args:
+          type: array
+          items:
+            type: string
+          description: Command line arguments
+        restartPolicy:
+          $ref: '#/components/schemas/RestartPolicy'
+        healthCheck:
+          $ref: '#/components/schemas/HealthCheck'
+
+    RestartPolicy:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [always, on-failure, never]
+        maxAttempts:
+          type: number
+          description: Max restart attempts (0 = unlimited)
+        backoff:
+          type: number
+          description: Delay between restarts (milliseconds)
+
+    HealthCheck:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Health check endpoint path
+          example: /health
+        interval:
+          type: number
+          description: Check interval (milliseconds)
+        timeout:
+          type: number
+          description: Request timeout (milliseconds)
+        failureThreshold:
+          type: number
+          description: Consecutive failures to mark unhealthy
+        successThreshold:
+          type: number
+          description: Consecutive successes to mark healthy
+        restartOnFailure:
+          type: boolean
+          description: Auto-restart on health check failure
+        healthy:
+          type: boolean
+          description: Current health status (runtime)
+
+    Function:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Function ID (SHA256 hash)
+        name:
+          type: string
+          description: Function name
+        endpoint:
+          type: string
+          description: Function execution endpoint
+        filePath:
+          type: string
+          description: Path to the function file
+        methods:
+          type: array
+          items:
+            type: string
+            enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+          description: Allowed HTTP methods for this function. If not specified, all methods are allowed.
+          example: ["GET", "POST"]
+        passAllHeaders:
+          type: boolean
+          description: |
+            Whether all request headers (including internal Molnos headers) are passed to this function.
+            When false or omitted, internal Molnos headers (x-molnos-*) are filtered out.
+            User authorization headers are always passed through.
+          example: false
+        allowUnauthenticated:
+          type: boolean
+          description: |
+            Whether this function allows unauthenticated execution.
+            When false or omitted (default), the function requires a valid Bearer token in the Authorization header.
+            When true, the function can be executed without authentication.
+          example: false
+        bindings:
+          type: array
+          description: Service bindings configuration (if configured)
+          items:
+            type: object
+            required:
+              - service
+              - permissions
+            properties:
+              service:
+                type: string
+                enum: [databases, storage, observability, sites, functions]
+                description: Service name
+              permissions:
+                type: array
+                description: Permission declarations for this service
+                items:
+                  type: object
+                  properties:
+                    resource:
+                      type: string
+                      description: Resource type (optional)
+                    actions:
+                      type: array
+                      items:
+                        type: string
+                      description: Actions array (optional)
+                    targets:
+                      type: array
+                      items:
+                        type: string
+                      description: Specific resource targets (optional)
+        serviceAccountId:
+          type: string
+          description: Service account ID for bindings (if configured). Token is never exposed in API responses.
+        createdAt:
+          type: number
+          format: int64
+          description: Creation timestamp
+        updatedAt:
+          type: number
+          format: int64
+          description: Last update timestamp
+
+    LogEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Event ID
+        timestamp:
+          type: number
+          format: int64
+          description: Event timestamp (milliseconds)
+        service:
+          type: string
+          description: Service name
+        level:
+          type: string
+          enum: [info, warn, error, debug]
+          description: Log level
+        message:
+          type: string
+          description: Log message
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Additional event metadata
+
+    StorageObject:
+      type: object
+      properties:
+        key:
+          type: string
+          description: |
+            Object key (path).
+            Files have their name/path, folders end with a trailing slash (/).
+          example: 'docs/readme.md'
+        size:
+          type: number
+          format: int64
+          description: |
+            Object size in bytes.
+            Folders always have size 0.
+          example: 1234
+        lastModified:
+          type: string
+          format: date-time
+          description: Last modification timestamp
+          example: '2025-12-19T13:45:00.000Z'
+        type:
+          type: string
+          enum: [file, folder]
+          description: |
+            Object type:
+            file (Regular file object) or
+            folder (Directory/folder, key ends with /)
+          example: 'file'
+      required:
+        - key
+        - size
+        - lastModified
+        - type
+
+    SiteProject:
+      type: object
+      properties:
+        projectId:
+          type: string
+          description: Unique project identifier
+          example: 'a1b2c3d4'
+        name:
+          type: string
+          description: Project display name (derived from projectId or index.html title)
+          example: 'My Static Site'
+        url:
+          type: string
+          description: Public URL for the deployed site (via gateway)
+          example: 'http://localhost:3000/sites/projects/a1b2c3d4/'
+        status:
+          type: string
+          enum: [active, inactive, deploying, failed]
+          description: Deployment status
+          example: 'active'
+        files:
+          type: number
+          description: Number of files in the deployment
+          example: 12
+        size:
+          type: string
+          description: Total size of deployed files (human-readable format)
+          example: '2.5 MB'
+        lastDeployed:
+          type: string
+          format: date-time
+          description: Last deployment timestamp
+          example: '2025-12-19T13:45:00.000Z'
+        createdAt:
+          type: string
+          format: date-time
+          description: Project creation timestamp
+          example: '2025-12-19T10:30:00.000Z'
+      required:
+        - projectId
+        - url
+        - status
+
+    DatabaseTable:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Table name
+          example: 'users'
+        items:
+          type: number
+          description: Number of items in the table
+          example: 150
+        size:
+          type: string
+          description: Human-readable size of the table
+          example: '2.3 KB'
+      required:
+        - name
+        - items
+        - size
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        cause:
+          type: object
+          properties:
+            statusCode:
+              type: number
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Invalid input
+            cause:
+              statusCode: 400
+
+    Unauthorized:
+      description: Unauthorized - Invalid or missing authentication
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: Unauthorized
+
+    Forbidden:
+      description: Forbidden - Insufficient permissions
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: Forbidden
+
+    NotFound:
+      description: Resource not found
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: Not Found
+
+    ServiceUnavailable:
+      description: Service unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Service unavailable (unhealthy)
