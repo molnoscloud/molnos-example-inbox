@@ -28,6 +28,8 @@ export async function handler(request, context) {
 
     await databases.write(config.tableName, messageId, message);
 
+    console.log(`Message "${messageId}" was posted`);
+
     return {
       statusCode: 200,
       body: {

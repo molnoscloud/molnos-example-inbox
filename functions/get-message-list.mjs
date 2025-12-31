@@ -5,12 +5,11 @@ export async function handler(request, context) {
   const { body } = request;
   const userEmail = body?.userEmail;
 
-  if (!userEmail) {
+  if (!userEmail)
     return {
       statusCode: 400,
       body: 'User email not provided in request'
     };
-  }
 
   const result = await databases.get(config.tableName);
 

@@ -6,12 +6,11 @@ export async function handler(request, context) {
   const userEmail = body?.userEmail;
   const messageId = body?.id;
 
-  if (!userEmail) {
+  if (!userEmail)
     return {
       statusCode: 400,
       body: 'User email not provided in request'
     };
-  }
 
   if (!messageId)
     return { statusCode: 400, body: "Missing 'id' property in body!" };
