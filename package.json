@@ -1,7 +1,7 @@
 {
   "name": "molnos-example-inbox",
   "description": "Inbox example application running on MolnOS.",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "author": "MolnOS",
   "license": "MIT",
   "keywords": [],
@@ -14,13 +14,15 @@
   },
   "homepage": "https://github.com/molnoscloud/molnos-example-inbox",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "deploy": "bash scripts/deploy.sh",
-    "update": "bash scripts/update.sh",
-    "teardown": "bash scripts/teardown.sh"
+    "build": "node build.mjs",
+    "validate": "molnos iac validate molnos.json",
+    "diff": "molnos iac diff molnos.json",
+    "sync": "npm run build && molnos iac apply molnos.json --prune",
+    "deploy": "npm run build && molnos iac apply molnos.json",
+    "destroy": "molnos context destroy inbox-demo"
   },
   "devDependencies": {
-    "@biomejs/biome": "2",
+    "@biomejs/biome": "latest",
     "esbuild": "latest"
   }
 }

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schemas.molnos.cloud/schema-config-v1.json",
+  "email": {
+    "emailSubject": "Sign In To MolnOS",
+    "user": "signin@mydomain.cloud",
+    "password": "your-value-here",
+    "host": "smtp.provider.com",
+    "port": 465,
+    "secure": true
+  },
+  "molnos": {
+    "dataPath": "data",
+    "initialUser": {
+      "userName": "Demo User",
+      "email": "user@mydomain.cloud"
+    }
+  },
+  "auth": {
+    "jwtSecret": "your-jwt-secret",
+    "consoleUrl": "http://localhost:8000"
+  },
+  "server": {
+    "allowedDomains": [
+      "*"
+    ]
+  }
+}

@@ -4,12 +4,12 @@
 const API_BASE_URL = 'http://localhost:3000';
 const BUCKET_ID = 'inbox-bucket';
 
-// These should be automatically populated by the deployment script etc.
-const APP_ID = '';
+// TODO
+const APP_ID = 'inboxapp';
 const FUNCTION_IDS = {
-  listMessages: '',
-  getMessage: '',
-  sendMessage: ''
+  listMessages: 'getlstfn',
+  getMessage: 'getmsgfn',
+  sendMessage: 'pstmsgfn'
 };
 
 /* Demo Mode */

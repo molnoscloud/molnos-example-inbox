@@ -4,6 +4,18 @@ This project demonstrates a simple messaging application: **Inbox**.
 
 It is composed of several common cloud primitives — adapted as needed — to work on [MolnOS](https://molnos.cloud).
 
+![The main inbox](docs/inbox-1.png)
+
+_The main inbox._
+
+![Drafting a message to someone.](docs/inbox-2.png)
+
+_Drafting a message to someone._
+
+![Reading a message](docs/inbox-3.png)
+
+_Reading a message._
+
 The application allows you to privately read and write messages to other users on your MolnOS instance.
 
 The capabilities demonstrated span the following capabilities:
@@ -13,7 +25,7 @@ The capabilities demonstrated span the following capabilities:
 - **Databases**: Message data is stored in a key-value database.
 - **Storage**: Any image attachments for messages are stored in object storage.
 - **Auth**: To enable MolnOS users to sign into the app, Application Registrations and passwordless (email) login is used.
-- **Observability**: Logs stored for all posted message.
+- **Observability**: Logs stored for all posted messages.
 
 _This is an example, not reference-style, application intended to demonstrate features. For production use, always make sure to go through in detail a solution like this one._
 
@@ -28,24 +40,19 @@ _This is an example, not reference-style, application intended to demonstrate fe
 
 ## Quick Start
 
+**Make sure you follow any prerequisites first!**
+
+Assuming you are running MolnOS locally (else modify to your remote API endpoint below):
+
 ```bash
+
 # Install dependencies
 npm install
 
-# Deploy infrastructure (creates app registration, bucket, database, functions, site)
-./scripts/deploy.sh
+# Deploy infrastructure (creates app registration, bucket, database, functions, site) with a convenience command
+npm run deploy
 
-# Update site config with credentials
-./scripts/update-config.sh
-
-# Set function IDs and redeploy
-source .app-credentials
-export LIST_MESSAGES_ID='<list-function-id>'
-export GET_MESSAGE_ID='<get-function-id>'
-export SEND_MESSAGE_ID='<send-function-id>'
-./scripts/update.sh
-
-# Done! Access at http://localhost:3000/sites/projects/<SITE_ID>/
+# Done! Access at http://localhost:3000/sites/projects/inbox-site/
 ```
 
 ## Authentication
@@ -55,21 +62,6 @@ Uses **MolnOS Application Registration** with passwordless email login (magic li
 **Flow:** User enters email → receives magic link → clicks link → redirected to app with tokens → tokens stored in localStorage.
 
 **Security:** Application whitelisting, redirect URI validation, token-based sessions with refresh capability.
-
-## Management Scripts
-
-- **[scripts/deploy.sh](scripts/deploy.sh)**: Deploy all infrastructure
-- **[scripts/update-config.sh](scripts/update-config.sh)**: Update site config with app credentials
-- **[scripts/update.sh](scripts/update.sh)**: Rebuild and redeploy functions and site
-- **[scripts/teardown.sh](scripts/teardown.sh)**: Delete all infrastructure
-
-All scripts use the MolnOS CLI.
-
-You can run these simply with:
-
-- `npm run deploy`
-- `npm run update`
-- `npm run teardown`
 
 ## Project Structure
 
@@ -84,17 +76,17 @@ You can run these simply with:
    - `post-message`: Creates a new message
 5. **Static Site**: Frontend application with auth callback
 
-## Manual Operations (Advanced)
+These are described in `molnos.json`, which is MolnOS' way to handle infrastructure-as-code.
 
-### Using MolnOS CLI Directly
+## Demo Mode
 
-### Demo Mode
-
-For testing without a backend, set demo mode in your browser console:
+For testing without a MolnOS deployment, set demo mode in your browser console:
 
 ```javascript
 localStorage.setItem('DEMO_DATA', 'true')
 ```
+
+## Troubleshooting
 
 ### Authentication Flow Not Working
 
@@ -109,7 +101,6 @@ localStorage.setItem('DEMO_DATA', 'true')
 2. **Check Application ID in site:**
 
    Open [site/script.js](site/script.js) and verify `APP_ID` is set correctly.
-   If not, run `./scripts/update-config.sh` to fix it.
 
 3. **Verify Redirect URI:**
    The redirect URI must match exactly. Format: `http://localhost:3000/sites/projects/<SITE_ID>/auth-callback.html`
@@ -139,7 +130,7 @@ localStorage.setItem('DEMO_DATA', 'true')
 
 ### CLI Authentication Issues
 
-For CLI operations (deploy, update, teardown):
+For CLI operations (deploy, update, destroy):
 
 ```bash
 molnos auth status

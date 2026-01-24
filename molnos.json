@@ -1,0 +1,91 @@
+{
+  "$schema": "https://schemas.molnos.cloud/schema-iac-v1.json",
+  "version": "1",
+  "context": {
+    "name": "inbox-demo",
+    "intent": "Support users with secure messaging across MolnOS. Naturally weave all MolnOS infrastructure services into a functional, lean inbox system."
+  },
+  "resources": {
+    "functions": {
+      "get-message-list": {
+        "source": "dist/get-message-list.js",
+        "id": "getlstfn",
+        "methods": [
+          "GET",
+          "POST"
+        ],
+        "bindings": [
+          {
+            "service": "databases",
+            "resource": "inbox-messages",
+            "permissions": [
+              "read",
+              "write"
+            ]
+          }
+        ]
+      },
+      "get-message": {
+        "source": "dist/get-message.js",
+        "id": "getmsgfn",
+        "methods": [
+          "GET",
+          "POST"
+        ],
+        "bindings": [
+          {
+            "service": "databases",
+            "resource": "inbox-messages",
+            "permissions": [
+              "read",
+              "write"
+            ]
+          }
+        ]
+      },
+      "post-message": {
+        "source": "dist/post-message.js",
+        "id": "pstmsgfn",
+        "methods": [
+          "POST"
+        ],
+        "bindings": [
+          {
+            "service": "databases",
+            "resource": "inbox-messages",
+            "permissions": [
+              "read",
+              "write"
+            ]
+          }
+        ]
+      }
+    },
+    "databases": {
+      "inbox-messages": {}
+    },
+    "storage": {
+      "inbox-bucket": {
+        "public": true
+      }
+    },
+    "sites": {
+      "inbox-site": {
+        "source": "site"
+      }
+    },
+    "applications": {
+      "inbox-app": {
+        "id": "inboxapp",
+        "description": "MolnOS Inbox Application",
+        "redirectUris": [
+          "http://localhost:3000/sites/projects/inbox-site/auth-callback.html"
+        ]
+      }
+    }
+  },
+  "identities": {
+    "users": {},
+    "serviceAccounts": {}
+  }
+}

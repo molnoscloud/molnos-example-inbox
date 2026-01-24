@@ -26,4 +26,7 @@ Thumbs.db
 
 molnos-cli.sh
 schema.yml
-.app-credentials
+molnos.config.json
+
+data/
+molnos_core/
