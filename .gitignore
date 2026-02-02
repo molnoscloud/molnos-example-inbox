@@ -30,3 +30,6 @@ molnos.config.json
 
 data/
 molnos_core/
+
+schema*.yml
+schema*.json

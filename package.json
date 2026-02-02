@@ -1,7 +1,7 @@
 {
   "name": "molnos-example-inbox",
   "description": "Inbox example application running on MolnOS.",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "author": "MolnOS",
   "license": "MIT",
   "keywords": [],

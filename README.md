@@ -18,12 +18,13 @@ _Reading a message._
 
 The application allows you to privately read and write messages to other users on your MolnOS instance.
 
-The capabilities demonstrated span the following capabilities:
+The capabilities demonstrated span the following:
 
 - **Sites**: The web application is hosted on MolnOS as a static site.
 - **Functions**: The app's backend is split into serverless functions.
 - **Databases**: Message data is stored in a key-value database.
 - **Storage**: Any image attachments for messages are stored in object storage.
+- **Schemas**: A message schema is defined in the schema registry for validation.
 - **Auth**: To enable MolnOS users to sign into the app, Application Registrations and passwordless (email) login is used.
 - **Observability**: Logs stored for all posted messages.
 
@@ -37,6 +38,7 @@ _This is an example, not reference-style, application intended to demonstrate fe
 - Make sure to register and start all MolnOS services.
 - [Node.js](https://nodejs.org/en) installed
 - Dependencies of this repo installed with `npm install`
+- Modify the `molnos.json` (IAC config file) and its `applications.redirectUris` array to point to your MolnOS instance.
 
 ## Quick Start
 
@@ -70,13 +72,16 @@ Uses **MolnOS Application Registration** with passwordless email login (magic li
 1. **Application Registration**: `inbox-app` - OAuth application credentials
 2. **Database Table**: `inbox-messages` - Stores all messages
 3. **Storage Bucket**: `inbox-bucket` - For file storage
-4. **Serverless Functions**: Three functions with database bindings
+4. **Schema**: `inbox-message` - Message validation schema in the registry
+5. **Serverless Functions**: Three functions with database bindings
    - `get-message-list`: Lists all messages
    - `get-message`: Retrieves a specific message
    - `post-message`: Creates a new message
-5. **Static Site**: Frontend application with auth callback
+6. **Static Site**: Frontend application with auth callback
 
 These are described in `molnos.json`, which is MolnOS' way to handle infrastructure-as-code.
+
+The IaC configuration also uses **context attributes** to tag the deployment with metadata (`domain`, `tier`) for organizational purposes.
 
 ## Demo Mode
 
@@ -103,7 +108,7 @@ localStorage.setItem('DEMO_DATA', 'true')
    Open [site/script.js](site/script.js) and verify `APP_ID` is set correctly.
 
 3. **Verify Redirect URI:**
-   The redirect URI must match exactly. Format: `http://localhost:3000/sites/projects/<SITE_ID>/auth-callback.html`
+   The redirect URI must match exactly. Format: `http://localhost:3000/sites/projects/inbox-app/auth-callback.html`
 
 4. **Check Browser Console:**
    Open browser DevTools (F12) and check for JavaScript errors during sign-in or callback.

@@ -3,7 +3,11 @@
   "version": "1",
   "context": {
     "name": "inbox-demo",
-    "intent": "Support users with secure messaging across MolnOS. Naturally weave all MolnOS infrastructure services into a functional, lean inbox system."
+    "intent": "Support users with secure messaging across MolnOS. Naturally weave all MolnOS infrastructure services into a functional, lean inbox system.",
+    "attributes": {
+      "domain": "messaging",
+      "tier": "example"
+    }
   },
   "resources": {
     "functions": {
@@ -72,6 +76,37 @@
     "sites": {
       "inbox-site": {
         "source": "site"
+      }
+    },
+    "schemas": {
+      "inbox-message": {
+        "description": "Schema for inbox messages",
+        "schema": {
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "images": {
+              "type": "array"
+            }
+          },
+          "required": [
+            "from",
+            "to",
+            "subject",
+            "body"
+          ],
+          "additionalProperties": false
+        }
       }
     },
     "applications": {
