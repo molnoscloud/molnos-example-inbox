@@ -14,55 +14,41 @@
       "get-message-list": {
         "source": "dist/get-message-list.js",
         "id": "getlstfn",
-        "methods": [
-          "GET",
-          "POST"
-        ],
+        "methods": ["GET", "POST"],
         "bindings": [
           {
             "service": "databases",
             "resource": "inbox-messages",
-            "permissions": [
-              "read",
-              "write"
-            ]
+            "permissions": ["read", "write"]
           }
-        ]
+        ],
+        "triggers": [{ "type": "http" }]
       },
       "get-message": {
         "source": "dist/get-message.js",
         "id": "getmsgfn",
-        "methods": [
-          "GET",
-          "POST"
-        ],
+        "methods": ["GET", "POST"],
         "bindings": [
           {
             "service": "databases",
             "resource": "inbox-messages",
-            "permissions": [
-              "read",
-              "write"
-            ]
+            "permissions": ["read", "write"]
           }
-        ]
+        ],
+        "triggers": [{ "type": "http" }]
       },
       "post-message": {
         "source": "dist/post-message.js",
         "id": "pstmsgfn",
-        "methods": [
-          "POST"
-        ],
+        "methods": ["POST"],
         "bindings": [
           {
             "service": "databases",
             "resource": "inbox-messages",
-            "permissions": [
-              "read",
-              "write"
-            ]
+            "permissions": ["read", "write"]
           }
-        ]
+        ],
+        "triggers": [{ "type": "http" }]
       }
     },
     "databases": {
@@ -99,12 +85,7 @@
               "type": "array"
             }
           },
-          "required": [
-            "from",
-            "to",
-            "subject",
-            "body"
-          ],
+          "required": ["from", "to", "subject", "body"],
           "additionalProperties": false
         }
       }
