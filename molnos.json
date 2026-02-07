@@ -27,6 +27,11 @@
               "write"
             ]
           }
+        ],
+        "triggers": [
+          {
+            "type": "http"
+          }
         ]
       },
       "get-message": {
@@ -45,6 +50,11 @@
               "write"
             ]
           }
+        ],
+        "triggers": [
+          {
+            "type": "http"
+          }
         ]
       },
       "post-message": {
@@ -61,6 +71,11 @@
               "read",
               "write"
             ]
+          }
+        ],
+        "triggers": [
+          {
+            "type": "http"
           }
         ]
       }
